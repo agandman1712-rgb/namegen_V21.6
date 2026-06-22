@@ -1,3 +1,4 @@
+# יצירת קלאסטר ה-EKS המנוהל בענן AWS
 resource "aws_eks_cluster" "namegen_cluster" {
   name     = "namegen-cluster"
   role_arn = aws_iam_role.eks_role.arn
@@ -5,8 +6,8 @@ resource "aws_eks_cluster" "namegen_cluster" {
 
   vpc_config {
     subnet_ids = [
-      aws_default_subnet.default_az1.id,
-      aws_default_subnet.default_az2.id
+      aws_subnet.public_subnet_1.id,
+      aws_subnet.public_subnet_2.id
     ]
   }
 
@@ -42,7 +43,7 @@ resource "aws_iam_role" "eks_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "eks.amazonaws.com"
+          Service = "://amazonaws.com"
         }
       }
     ]
