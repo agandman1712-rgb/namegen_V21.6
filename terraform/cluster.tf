@@ -5,8 +5,8 @@ resource "aws_eks_cluster" "namegen_cluster" {
 
   vpc_config {
     subnet_ids = [
-      aws_subnet.public_subnet_1.id,
-      aws_subnet.public_subnet_2.id
+      aws_default_subnet.default_az1.id,
+      aws_default_subnet.default_az2.id
     ]
   }
 
