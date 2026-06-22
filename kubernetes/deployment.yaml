@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: namegen-app
+  labels:
+    app: namegen
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: namegen
+  template:
+    metadata:
+      labels:
+        app: namegen
+    spec:
+      containers:
+      - name: namegen
+        image: YOUR_DOCKERHUB_USERNAME/namegen:latest 
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MONGODB_URL
+          value: "mongodb://genuser:password@mongodb-service/namegen"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: namegen-service
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
+spec:
+  type: LoadBalancer
+  selector:
+    app: namegen
+  ports:
+  - protocol: TCP
+    port: 80        
+    targetPort: 8080 
