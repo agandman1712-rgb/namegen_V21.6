@@ -34,7 +34,7 @@ resource "aws_eks_cluster" "namegen_cluster" {
 }
 
 resource "aws_iam_role" "eks_role" {
-  name = "namegen-eks-role"
+  name = "namegen-eks-role-v2"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
