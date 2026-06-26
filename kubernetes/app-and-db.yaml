@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongodb-secret
+type: Opaque
+stringData:
+  mongo-username: "genuser"
+  mongo-password: "MONGODB_PASSWORD_PLACEHOLDER"
+---
+# ==========================================
+# 2. שירות רשת פנימי עבור MongoDB
+# ==========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+  labels:
+    app: mongodb
+spec:
+  ports:
+  - port: 27017
+    name: mongo
+  clusterIP: None # Headless Service עבור StatefulSet
+  selector:
+    app: mongodb
+---
+# ==========================================
+# 3. הגדרת מסד הנתונים MongoDB (גרסה 3.6)
+# ==========================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+spec:
+  serviceName: "mongodb-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongo
+        image: mongo:3.6
+        ports:
+        - containerPort: 27017
+          name: mongo
+        env:
+        # התאמת משתני הסביבה לגרסה 3.6 הישנה
+        - name: MONGO_INITDB_DATABASE
+          value: "namegen"
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: mongo-username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: mongo-password
+        volumeMounts:
+        - name: mongo-storage
+          mountPath: /data/db
+  volumeClaimTemplates:
+  - metadata:
+      name: mongo-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 5Gi
+---
+# ==========================================
+# 4. שירות חיצוני (NLB) לחשיפת האפליקציה לאינטרנט
+# ==========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: namegen-service
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+spec:
+  type: LoadBalancer
+  selector:
+    app: namegen
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+---
+# ==========================================
+# 5. הגדרת האפליקציה 
+# ==========================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: namegen-app
+  labels:
+    app: namegen
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: namegen
+  template:
+    metadata:
+      labels:
+        app: namegen
+    spec:
+      containers:
+      - name: namegen
+        image: YOUR_DOCKERHUB_USERNAME/namegen:latest 
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MONGODB_URL
+          value: "mongodb://genuser:MONGODB_PASSWORD_PLACEHOLDER@mongodb-0.mongodb-service:27017/namegen"

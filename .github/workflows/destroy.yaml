@@ -1,8 +1,9 @@
 name: EKS Cloud Infrastructure Destroy
 
-# 🌟 טריגר מיוחד המאפשר הפעלה ידנית בלבד (כפתור באתר) - כדי שלא יימחק שום דבר בטעות!
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 22 * * *'
 
 jobs:
   terraform-destroy:
@@ -18,6 +19,15 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
+    - name: Update Kubeconfig for EKS
+      run: |
+        aws eks update-kubeconfig --name namegen-cluster --region us-east-1
+      continue-on-error: true 
+    - name: Clean Kubernetes Resources
+      run: |
+        kubectl delete -f kubernetes/ --timeout=60s
+      continue-on-error: true 
+
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
 
@@ -25,7 +35,6 @@ jobs:
       run: terraform init
       working-directory: ./terraform
 
-    # 🌟 פקודת ההשמדה שמנקה את כל השרתים והרשתות בענן AWS ומאפסת את החיוב הכספי
     - name: Terraform Destroy
       run: terraform destroy -auto-approve
       working-directory: ./terraform
