@@ -1,9 +1,9 @@
 name: EKS Cloud Infrastructure Destroy
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # הפעלה ידנית מהאתר
   schedule:
-    - cron: '0 22 * * *'
+    - cron: '0 22 * * *' 
 
 jobs:
   terraform-destroy:
@@ -21,12 +21,22 @@ jobs:
 
     - name: Update Kubeconfig for EKS
       run: |
+        aws configure set default.region us-east-1
         aws eks update-kubeconfig --name namegen-cluster --region us-east-1
       continue-on-error: true 
+
     - name: Clean Kubernetes Resources
       run: |
         kubectl delete -f kubernetes/ --timeout=60s
       continue-on-error: true 
+
+    - name: Force Delete EKS Cluster via CLI
+      run: |
+        echo "מתחיל מחיקה כפויה של הקלאסטר דרך ה-CLI..."
+        aws eks delete-cluster --name namegen-cluster --region us-east-1 || echo "הקלאסטר כבר נמחק."
+        echo "ממתין 60 שניות לשחרור משאבים..."
+        sleep 60
+      continue-on-error: true
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -38,3 +48,15 @@ jobs:
     - name: Terraform Destroy
       run: terraform destroy -auto-approve
       working-directory: ./terraform
+
+    - name: Force Clean Remaining IAM Roles
+      run: |
+        for role in $(aws iam list-roles --query "Roles[?contains(RoleName, 'namegen')].RoleName" --output text); do
+          echo "מוחק פוליסיס מחוברים עבור ה-Role: $role"
+          for policy in $(aws iam list-attached-role-policies --role-name "$role" --query "AttachedPolicies[].PolicyArn" --output text); do
+            aws iam detach-role-policy --role-name "$role" --policy-arn "$policy"
+          done
+          echo "מוחק את ה-Role: $role"
+          aws iam delete-role --role-name "$role"
+        done
+      continue-on-error: true
