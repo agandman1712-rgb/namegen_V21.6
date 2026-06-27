@@ -95,7 +95,9 @@ resource "aws_route_table_association" "public_2" {
 # 3. הרשאות ואבטחה לקלאסטר (IAM Roles)
 # ==========================================
 resource "aws_iam_role" "eks_role" {
-  name = "namegen-eks-role-v2"
+  # 🌟 תיקון זהב: משתמשים ב-name_prefix כדי ש-AWS תייצר שם ייחודי בכל הרצה,
+  # מה שמונע לחלוטין את שגיאת "EntityAlreadyExists" אם נשארו שאריות בענן!
+  name_prefix = "namegen-eks-role-"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -104,13 +106,14 @@ resource "aws_iam_role" "eks_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "eks.amazonaws.com"
+          Service = "://amazonaws.com"
         }
       }
     ]
   })
 }
 
+# חיבור פוליסי בסיסי לניהול קלאסטר EKS
 resource "aws_iam_role_policy_attachment" "eks_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
   role       = aws_iam_role.eks_role.name
@@ -172,7 +175,7 @@ resource "aws_eks_cluster" "namegen_cluster" {
   }
 
   depends_on = [
-    aws_iam_role.eks_role,    
+    aws_iam_role.eks_role,
     aws_iam_role_policy_attachment.eks_policy,
     aws_iam_role_policy_attachment.eks_compute_policy,
     aws_iam_role_policy_attachment.eks_block_storage_policy,
