@@ -28,7 +28,6 @@ resource "aws_vpc" "namegen_vpc" {
   }
 }
 
-# שער לאינטרנט
 resource "aws_internet_gateway" "namegen_igw" {
   vpc_id = aws_vpc.namegen_vpc.id
 
@@ -37,7 +36,6 @@ resource "aws_internet_gateway" "namegen_igw" {
   }
 }
 
-# סאבנט ציבורי 1
 resource "aws_subnet" "public_subnet_1" {
   vpc_id                  = aws_vpc.namegen_vpc.id
   cidr_block              = "10.0.1.0/24"
@@ -51,7 +49,6 @@ resource "aws_subnet" "public_subnet_1" {
   }
 }
 
-# סאבנט ציבורי 2
 resource "aws_subnet" "public_subnet_2" {
   vpc_id                  = aws_vpc.namegen_vpc.id
   cidr_block              = "10.0.2.0/24"
@@ -65,7 +62,6 @@ resource "aws_subnet" "public_subnet_2" {
   }
 }
 
-# טבלת ניתוב שמחברת את הסאבנטים לאינטרנט
 resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.namegen_vpc.id
 
@@ -79,21 +75,21 @@ resource "aws_route_table" "public_rt" {
   }
 }
 
-# חיבור סאבנט 1 לטבלת הניתוב
 resource "aws_route_table_association" "public_1" {
   subnet_id      = aws_subnet.public_subnet_1.id
   route_table_id = aws_route_table.public_rt.id
 }
 
-# חיבור סאבנט 2 לטבלת הניתוב
 resource "aws_route_table_association" "public_2" {
   subnet_id      = aws_subnet.public_subnet_2.id
   route_table_id = aws_route_table.public_rt.id
 }
 
 # ==========================================
-# 3. הרשאות ואבטחה לקלאסטר (IAM Roles)
+# 3. הרשאות ואבטחה לקלאסטר ולשרתים (IAM Roles)
 # ==========================================
+
+# א. Role עבור ה"מוח" המנהל של קלאסטר ה-EKS
 resource "aws_iam_role" "eks_role" {
   name_prefix = "namegen-eks-role-"
 
@@ -104,14 +100,13 @@ resource "aws_iam_role" "eks_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "ec2.amazonaws.com"
+          Service = "://amazonaws.com"
         }
       }
     ]
   })
 }
 
-# חיבור פוליסי בסיסי לניהול קלאסטר EKS
 resource "aws_iam_role_policy_attachment" "eks_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
   role       = aws_iam_role.eks_role.name
@@ -137,6 +132,29 @@ resource "aws_iam_role_policy_attachment" "eks_networking_policy" {
   role       = aws_iam_role.eks_role.name
 }
 
+# ב. Role עבור השרתים האוטומטיים (מכונות ה-EC2) ש-Auto Mode מקים לבד
+resource "aws_iam_role" "eks_node_role" {
+  name_prefix = "namegen-node-role-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "://amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "eks_node_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.eks_node_role.name
+}
+
 # ==========================================
 # 4. הקמת קלאסטר ה-EKS (במצב Auto Mode)
 # ==========================================
@@ -156,9 +174,9 @@ resource "aws_eks_cluster" "namegen_cluster" {
   }
 
   compute_config {
-    enabled    = true
-    node_role_arn = aws_iam_role.eks_node_role.arn
-    node_pools = ["general-purpose"]
+    enabled       = true
+    node_role_arn = aws_iam_role.eks_node_role.arn # שימוש ב-Role שהוצהר למעלה
+    node_pools    = ["general-purpose"]
   }
 
   kubernetes_network_config {
@@ -175,10 +193,12 @@ resource "aws_eks_cluster" "namegen_cluster" {
 
   depends_on = [
     aws_iam_role.eks_role,
+    aws_iam_role.eks_node_role,
     aws_iam_role_policy_attachment.eks_policy,
     aws_iam_role_policy_attachment.eks_compute_policy,
     aws_iam_role_policy_attachment.eks_block_storage_policy,
     aws_iam_role_policy_attachment.eks_load_balancing_policy,
-    aws_iam_role_policy_attachment.eks_networking_policy
+    aws_iam_role_policy_attachment.eks_networking_policy,
+    aws_iam_role_policy_attachment.eks_node_policy
   ]
 }
