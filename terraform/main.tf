@@ -89,6 +89,7 @@ resource "aws_route_table_association" "public_2" {
 # 3. הרשאות ואבטחה לקלאסטר ולשרתים (IAM Roles)
 # ==========================================
 
+# א. Role עבור ה"מוח" המנהל של קלאסטר ה-EKS
 resource "aws_iam_role" "eks_role" {
   name_prefix = "namegen-eks-role-"
 
@@ -131,6 +132,7 @@ resource "aws_iam_role_policy_attachment" "eks_networking_policy" {
   role       = aws_iam_role.eks_role.name
 }
 
+# ב. Role עבור השרתים האוטומטיים (מכונות ה-EC2) ש-Auto Mode מקים לבד
 resource "aws_iam_role" "eks_node_role" {
   name_prefix = "namegen-node-role-"
 
@@ -171,6 +173,11 @@ resource "aws_eks_cluster" "namegen_cluster" {
     ]
   }
 
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true 
+  }
+
   compute_config {
     enabled       = true
     node_role_arn = aws_iam_role.eks_node_role.arn 
@@ -199,4 +206,23 @@ resource "aws_eks_cluster" "namegen_cluster" {
     aws_iam_role_policy_attachment.eks_networking_policy,
     aws_iam_role_policy_attachment.eks_node_policy
   ]
+}
+
+# ==========================================
+# 5. 🌟 תוספת חובה: כרטיס כניסה והרשאות Admin פנימיות לקוברנטיס
+# ==========================================
+resource "aws_eks_access_entry" "pipeline_access" {
+  cluster_name  = aws_eks_cluster.namegen_cluster.name
+  principal_arn = aws_iam_role.eks_role.arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "admin_policy" {
+  cluster_name  = aws_eks_cluster.namegen_cluster.name
+  policy_arn    = "arn:aws:iam::aws:policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = aws_iam_role.eks_role.arn
+
+  access_scope {
+    type = "cluster"
+  }
 }
