@@ -155,6 +155,22 @@ resource "aws_iam_role_policy_attachment" "eks_node_policy" {
   role       = aws_iam_role.eks_node_role.name
 }
 
+# 🌟 תוספת קריטית לבאג: נותן לשרתים הרשאה לייצר Load Balancers ב-Auto Mode!
+resource "aws_iam_role_policy_attachment" "eks_node_compute" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSComputePolicy"
+  role       = aws_iam_role.eks_node_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "eks_node_lb" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy"
+  role       = aws_iam_role.eks_node_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "eks_node_net" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSNetworkingPolicy"
+  role       = aws_iam_role.eks_node_role.name
+}
+
 # ==========================================
 # 4. הקמת קלאסטר ה-EKS (במצב Auto Mode)
 # ==========================================
@@ -205,6 +221,9 @@ resource "aws_eks_cluster" "namegen_cluster" {
     aws_iam_role_policy_attachment.eks_load_balancing_policy,
     aws_iam_role_policy_attachment.eks_networking_policy,
     aws_iam_role_policy_attachment.eks_node_policy
+    aws_iam_role_policy_attachment.eks_node_compute,  
+    aws_iam_role_policy_attachment.eks_node_lb,      
+    aws_iam_role_policy_attachment.eks_node_net  
   ]
 }
 
