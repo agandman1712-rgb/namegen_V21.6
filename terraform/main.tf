@@ -89,7 +89,6 @@ resource "aws_route_table_association" "public_2" {
 # 3. הרשאות ואבטחה לקלאסטר ולשרתים (IAM Roles)
 # ==========================================
 
-# א. Role עבור ה"מוח" המנהל של קלאסטר ה-EKS
 resource "aws_iam_role" "eks_role" {
   name_prefix = "namegen-eks-role-"
 
@@ -100,7 +99,7 @@ resource "aws_iam_role" "eks_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "://amazonaws.com"
+          Service = join("", ["eks", ".", "amazonaws", ".com"])
         }
       }
     ]
@@ -132,7 +131,6 @@ resource "aws_iam_role_policy_attachment" "eks_networking_policy" {
   role       = aws_iam_role.eks_role.name
 }
 
-# ב. Role עבור השרתים האוטומטיים (מכונות ה-EC2) ש-Auto Mode מקים לבד
 resource "aws_iam_role" "eks_node_role" {
   name_prefix = "namegen-node-role-"
 
@@ -143,7 +141,7 @@ resource "aws_iam_role" "eks_node_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "://amazonaws.com"
+          Service = join("", ["ec2", ".", "amazonaws", ".com"])
         }
       }
     ]
@@ -175,7 +173,7 @@ resource "aws_eks_cluster" "namegen_cluster" {
 
   compute_config {
     enabled       = true
-    node_role_arn = aws_iam_role.eks_node_role.arn # שימוש ב-Role שהוצהר למעלה
+    node_role_arn = aws_iam_role.eks_node_role.arn 
     node_pools    = ["general-purpose"]
   }
 
