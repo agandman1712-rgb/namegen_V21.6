@@ -104,7 +104,7 @@ resource "aws_iam_role" "eks_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "eks.amazonaws.com"
+          Service = "ec2.amazonaws.com"
         }
       }
     ]
@@ -157,6 +157,7 @@ resource "aws_eks_cluster" "namegen_cluster" {
 
   compute_config {
     enabled    = true
+    node_role_arn = aws_iam_role.eks_node_role.arn
     node_pools = ["general-purpose"]
   }
 
