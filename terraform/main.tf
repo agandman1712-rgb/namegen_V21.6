@@ -220,7 +220,7 @@ resource "aws_eks_cluster" "namegen_cluster" {
     aws_iam_role_policy_attachment.eks_block_storage_policy,
     aws_iam_role_policy_attachment.eks_load_balancing_policy,
     aws_iam_role_policy_attachment.eks_networking_policy,
-    aws_iam_role_policy_attachment.eks_node_policy
+    aws_iam_role_policy_attachment.eks_node_policy,
     aws_iam_role_policy_attachment.eks_node_compute,  
     aws_iam_role_policy_attachment.eks_node_lb,      
     aws_iam_role_policy_attachment.eks_node_net  
