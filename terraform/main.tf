@@ -95,8 +95,6 @@ resource "aws_route_table_association" "public_2" {
 # 3. הרשאות ואבטחה לקלאסטר (IAM Roles)
 # ==========================================
 resource "aws_iam_role" "eks_role" {
-  # 🌟 תיקון זהב: משתמשים ב-name_prefix כדי ש-AWS תייצר שם ייחודי בכל הרצה,
-  # מה שמונע לחלוטין את שגיאת "EntityAlreadyExists" אם נשארו שאריות בענן!
   name_prefix = "namegen-eks-role-"
 
   assume_role_policy = jsonencode({
@@ -106,7 +104,7 @@ resource "aws_iam_role" "eks_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "://amazonaws.com"
+          Service = "eks.amazonaws.com"
         }
       }
     ]
