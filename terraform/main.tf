@@ -111,7 +111,6 @@ resource "aws_iam_role" "eks_role" {
   })
 }
 
-# חיבור פוליסי בסיסי לניהול קלאסטר EKS
 resource "aws_iam_role_policy_attachment" "eks_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
   role       = aws_iam_role.eks_role.name
@@ -141,9 +140,10 @@ resource "aws_iam_role_policy_attachment" "eks_networking_policy" {
 # 4. הקמת קלאסטר ה-EKS (במצב Auto Mode)
 # ==========================================
 resource "aws_eks_cluster" "namegen_cluster" {
-  name     = "namegen-cluster"
-  role_arn = aws_iam_role.eks_role.arn
-  version  = "1.31" 
+  name                          = "namegen-cluster"
+  role_arn                      = aws_iam_role.eks_role.arn
+  version                       = "1.31" 
+  bootstrap_self_managed_addons = false 
 
   vpc_config {
     endpoint_private_access = true
@@ -172,6 +172,7 @@ resource "aws_eks_cluster" "namegen_cluster" {
   }
 
   depends_on = [
+    aws_iam_role.eks_role,    
     aws_iam_role_policy_attachment.eks_policy,
     aws_iam_role_policy_attachment.eks_compute_policy,
     aws_iam_role_policy_attachment.eks_block_storage_policy,
