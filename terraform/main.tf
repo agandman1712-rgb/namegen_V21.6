@@ -346,3 +346,6 @@ output "github_actions_role_arn" {
 }
 
 output "ecr_repository_url" {
+  description = "The ARN of the IAM Role for GitHub Actions OIDC authentication. Copy this value to GitHub Secrets."
+  value       = aws_iam_role.github_actions_role.arn
+}
