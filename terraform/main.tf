@@ -15,6 +15,9 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# משתנה פנימי לקבלת ה-Account ID של החשבון הנוכחי
+data "aws_caller_identity" "current" {}
+
 # ==========================================
 # 2. הגדרות רשת (VPC & Networking)
 # ==========================================
@@ -43,9 +46,9 @@ resource "aws_subnet" "public_subnet_1" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                               = "namegen-public-1"
-    "kubernetes.io/role/elb"           = "1"
-    "kubernetes.io/cluster/namegen-cluster" = "shared"
+    Name                                    = "namegen-public-1"
+    "kubernetes.io/role/elb"                = "1"
+    "kubernetes.io/cluster/namegen-cluster" = "owned" # עודכן מ-shared ל-owned לטובת Auto Mode
   }
 }
 
@@ -56,9 +59,9 @@ resource "aws_subnet" "public_subnet_2" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                               = "namegen-public-2"
-    "kubernetes.io/role/elb"           = "1"
-    "kubernetes.io/cluster/namegen-cluster" = "shared"
+    Name                                    = "namegen-public-2"
+    "kubernetes.io/role/elb"                = "1"
+    "kubernetes.io/cluster/namegen-cluster" = "owned" # עודכן מ-shared ל-owned לטובת Auto Mode
   }
 }
 
@@ -86,10 +89,101 @@ resource "aws_route_table_association" "public_2" {
 }
 
 # ==========================================
-# 3. הרשאות ואבטחה לקלאסטר ולשרתים (IAM Roles)
+# 3. הגדרת מאגר האימג'ים (Amazon ECR)
+# ==========================================
+resource "aws_ecr_repository" "namegen_repo" {
+  name                 = "namegen"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name = "namegen-ecr-repo"
+  }
+}
+
+# ==========================================
+# 4. מנגנון האבטחה וההרשאות ל-GitHub Actions (OIDC)
 # ==========================================
 
-# א. Role עבור ה"מוח" המנהל של קלאסטר ה-EKS
+# א. הקמת ה-OIDC Identity Provider מול שרתי GitHub
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://githubusercontent.com"
+  client_id_list  = ["://amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
+}
+
+# ב. יצירת ה-IAM Role שה-Pipeline של GitHub Actions יעטה על עצמו באופן זמני
+resource "aws_iam_role" "github_actions_role" {
+  name = "namegen-github-actions-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "://githubusercontent.com:aud" = "://amazonaws.com"
+          }
+          StringLike = {
+            # הרשאה מוגבלת אך ורק לריפו הספציפי שלך ולברוס הראשי/עבודה
+            "://githubusercontent.com:sub" = "repo:agandman1712-rgb/namegen_V21.6:*"
+          }
+        }
+      }
+    ]
+  })
+}
+
+# ג. הצמדת פוליסי המאפשר ל-Pipeline לנהל את ECR ולדבר עם ה-EKS
+resource "aws_iam_policy" "github_actions_policy" {
+  name = "namegen-github-actions-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeCluster"
+        ]
+        Resource = aws_eks_cluster.namegen_cluster.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_attach" {
+  role       = aws_iam_role.github_actions_role.name
+  policy_arn = aws_iam_policy.github_actions_policy.arn
+}
+
+# ==========================================
+# 5. הרשאות ואבטחה לקלאסטר ולשרתים (IAM Roles)
+# ==========================================
+
+# א. Role עבור ה"מוח" المנהל של קלאסטר ה-EKS
 resource "aws_iam_role" "eks_role" {
   name_prefix = "namegen-eks-role-"
 
@@ -100,7 +194,7 @@ resource "aws_iam_role" "eks_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = join("", ["eks", ".", "amazonaws", ".com"])
+          Service = "://amazonaws.com"
         }
       }
     ]
@@ -143,7 +237,7 @@ resource "aws_iam_role" "eks_node_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = join("", ["ec2", ".", "amazonaws", ".com"])
+          Service = "://amazonaws.com"
         }
       }
     ]
@@ -155,7 +249,6 @@ resource "aws_iam_role_policy_attachment" "eks_node_policy" {
   role       = aws_iam_role.eks_node_role.name
 }
 
-# 🌟 תוספת קריטית לבאג: נותן לשרתים הרשאה לייצר Load Balancers ב-Auto Mode!
 resource "aws_iam_role_policy_attachment" "eks_node_compute" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSComputePolicy"
   role       = aws_iam_role.eks_node_role.name
@@ -172,7 +265,7 @@ resource "aws_iam_role_policy_attachment" "eks_node_net" {
 }
 
 # ==========================================
-# 4. הקמת קלאסטר ה-EKS (במצב Auto Mode)
+# 6. הקמת קלאסטר ה-EKS (במצב Auto Mode)
 # ==========================================
 resource "aws_eks_cluster" "namegen_cluster" {
   name                          = "namegen-cluster"
@@ -228,20 +321,28 @@ resource "aws_eks_cluster" "namegen_cluster" {
 }
 
 # ==========================================
-# 5. 🌟 תוספת חובה: כרטיס כניסה והרשאות Admin פנימיות לקוברנטיס
+# 7. מתן כרטיס כניסת Admin פנימי בקוברנטיס ל-GitHub Actions Role
 # ==========================================
-resource "aws_eks_access_entry" "pipeline_access" {
+resource "aws_eks_access_entry" "github_pipeline_access" {
   cluster_name  = aws_eks_cluster.namegen_cluster.name
-  principal_arn = aws_iam_role.eks_role.arn
+  principal_arn = aws_iam_role.github_actions_role.arn # מאפשר ל-Pipeline להיכנס לקלאסטר
   type          = "STANDARD"
 }
 
-resource "aws_eks_access_policy_association" "admin_policy" {
+resource "aws_eks_access_policy_association" "github_admin_policy" {
   cluster_name  = aws_eks_cluster.namegen_cluster.name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-  principal_arn = aws_iam_role.eks_role.arn
+  principal_arn = aws_iam_role.github_actions_role.arn
 
   access_scope {
     type = "cluster"
   }
 }
+
+# פלט קריטי עבור המשתמש - מחזיר את ה-ARN שצריך להכניס לגיטהאב
+output "github_actions_role_arn" {
+  value       = aws_iam_role.github_actions_role.arn
+  description = "העתק את הערך הזה ל-GitHub Actions Secrets תחת השם AWS_ROLE_TO_ASSUME"
+}
+
+output "ecr_repository_url" {
