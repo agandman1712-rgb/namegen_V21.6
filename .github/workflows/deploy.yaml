@@ -1,90 +1,112 @@
-name: EKS Namegen Cloud Deploy
+name: EKS Namegen Cloud Deploy (Cost Optimized)
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main 
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'בחר האם להפעיל את הסביבה או למחוק את הרכיבים היקרים'
+        required: true
+        default: 'Apply'
+        type: choice
+        options:
+          - 'Apply'
+          - 'Destroy_EKS'
 
 jobs:
   devops-pipeline:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    # התחברות דינמית ומאובטחת באמצעות OIDC (תמיד תעבוד כי ה-OIDC נשאר קבוע בענן)
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
         aws-region: us-east-1
 
-    # ==========================================
-    # חלק א': טראפורם - ירוץ אך ורק בלחיצה ידנית!
-    # ==========================================
     - name: Setup Terraform
-      if: github.event_name == 'workflow_dispatch'
       uses: hashicorp/setup-terraform@v3
 
     - name: Terraform Init
-      if: github.event_name == 'workflow_dispatch'
       run: terraform init
       working-directory: ./terraform
 
-    - name: Terraform Apply
-      if: github.event_name == 'workflow_dispatch'
-      run: terraform apply -auto-approve
+    # ==========================================
+    # תרחיש 1: בחרת לכבות את השרתים ולחסוך כסף
+    # ==========================================
+    - name: Terraform Destroy EKS Cluster Only
+      if: github.event.inputs.action == 'Destroy_EKS'
+      run: |
+        echo "מכבים את ה-EKS והמכונות היקרות. רכיבי הרשת והאבטחה החינמיים יישארו באוויר לפעם הבאה."
+        terraform apply -var="enable_eks=false" -auto-approve
       working-directory: ./terraform
 
     # ==========================================
-    # חלק ב': בדיקת קיום הקלאסטר בענן
+    # תרחיש 2: ריצה רגילה (Push או Apply ידני) - הדלקת התשתית
     # ==========================================
+    - name: Terraform Apply (Ensure Cluster is ON)
+      if: github.event.inputs.action != 'Destroy_EKS'
+      run: terraform apply -var="enable_eks=true" -auto-approve
+      working-directory: ./terraform
+
+    # חלק ב': בדיקת קיום הקלאסטר בענן
     - name: Check if EKS Cluster Exists
+      if: github.event.inputs.action != 'Destroy_EKS'
       id: check_cluster
       run: |
         if aws eks describe-cluster --name namegen-cluster --region us-east-1 >/dev/null 2>&1; then
           echo "cluster_exists=true" >> $GITHUB_OUTPUT
-          echo "קלאסטר נמצא פעיל בענן. ממשיכים בפריסה האפליקציה."
         else
           echo "cluster_exists=false" >> $GITHUB_OUTPUT
-          echo "קלאסטר לא נמצא. הענן כבוי כרגע. ה-Pipeline יעצור כאן בצורה נקייה."
+          echo "קלאסטר כבוי. ה-Pipeline נעצר בצורה נקייה."
         fi
 
-    # ==========================================
-    # חלק ג': בנייה ופריסה - ירוץ רק אם הקלאסטר קיים באוויר!
-    # ==========================================
-    - name: Login to Docker Hub
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    # חלק ג': בנייה ופריסת האפליקציה (ירוץ רק אם הקלאסטר באוויר ולא בכיבוי)
+    - name: Login to Amazon ECR
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
 
     - name: Build and Push Docker Image
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile
-        push: true
-        tags: |
-          ${{ secrets.DOCKERHUB_USERNAME }}/namegen:latest
-          ${{ secrets.DOCKERHUB_USERNAME }}/namegen:${{ github.sha }}
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: namegen-app 
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
     - name: Update Kubeconfig for EKS
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
       run: |
-        aws configure set default.region us-east-1
         aws eks update-kubeconfig --name namegen-cluster --region us-east-1
 
     - name: Update Kubernetes Manifest
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
-        sed -i 's|image: .*|image: '${{ secrets.DOCKERHUB_USERNAME }}'/namegen:'${{ github.sha }}'|g' kubernetes/app-and-db.yaml
+        sed -i "s|YOUR_DOCKERHUB_USERNAME/namegen:latest|${{ env.ECR_REGISTRY }}/namegen-app:${{ github.sha }}|g" kubernetes/app-and-db.yaml
         sed -i 's|MONGODB_PASSWORD_PLACEHOLDER|'${{ secrets.MONGODB_PASSWORD }}'|g' kubernetes/app-and-db.yaml
 
     - name: Deploy to EKS Cloud
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
       run: |
-        kubectl apply -f kubernetes/
+        kubectl apply -f kubernetes/app-and-db.yaml
+        
+        echo "מחכים 25 שניות לקבלת הקישור מה-NLB..."
+        sleep 25
+        
+        echo "=== הקישור הסופי לאתר שלך הוא: ==="
+        kubectl get svc namegen-service -o jsonpath='{.status.loadBalancer.ingress[*].hostname}'
+        echo ""
