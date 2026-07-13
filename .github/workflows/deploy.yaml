@@ -40,16 +40,13 @@ jobs:
     # חלק א': טראפורם חכם - בודק קיום ומדלג על כפילויות!
     # ==========================================
     - name: Setup Terraform
-      if: github.event_name == 'workflow_dispatch'
       uses: hashicorp/setup-terraform@v3
 
     - name: Terraform Init
-      if: github.event_name == 'workflow_dispatch'
       run: terraform init
       working-directory: ./terraform
 
     - name: Smart Check and Import Existing Resources
-      if: github.event_name == 'workflow_dispatch'
       run: |
         ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
         
