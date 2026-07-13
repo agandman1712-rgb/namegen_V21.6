@@ -101,14 +101,13 @@ jobs:
           echo "מייבא את הסאבנט הציבורי הראשון (public-1)..."
           SUBNET_1=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=namegen-public-1" --region us-east-1 --query "Subnets[0].SubnetId" --output text)
           if [ "$SUBNET_1" != "None" ] && [ "$SUBNET_1" != "" ]; then
-            ASSOC_1=$(aws ec2 describe-subnets --subnet-ids $SUBNET_1 --region us-east-1 --query 
-            terraform import aws_subnet.public_subnet_1 $SUBNET_1/rtb-08367dfe600d9624a || true
+            terraform import aws_subnet.public_subnet_1 $SUBNET_1 || true
           fi
 
           echo "מייבא את הסאבנט הציבורי השני (public-2)..."
           SUBNET_2=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=namegen-public-2" --region us-east-1 --query "Subnets[0].SubnetId" --output text)
           if [ "$SUBNET_2" != "None" ] && [ "$SUBNET_2" != "" ]; then
-            terraform import aws_subnet.public_subnet_2 $SUBNET_2/rtb-08367dfe600d9624a || true
+            terraform import aws_subnet.public_subnet_2 $SUBNET_2 || true
           fi
         fi
 
