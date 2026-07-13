@@ -77,7 +77,7 @@ jobs:
       if: steps.check_cluster.outputs.cluster_exists == 'true'
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: namegen-app 
+        ECR_REPOSITORY: namegen 
         IMAGE_TAG: ${{ github.sha }}
       run: |
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
@@ -95,7 +95,7 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
-        sed -i "s|YOUR_DOCKERHUB_USERNAME/namegen:latest|${{ env.ECR_REGISTRY }}/namegen-app:${{ github.sha }}|g" kubernetes/app-and-db.yaml
+        sed -i "s|YOUR_DOCKERHUB_USERNAME/namegen:latest|${{ env.ECR_REGISTRY }}/namegen:${{ github.sha }}|g" kubernetes/app-and-db.yaml
         sed -i 's|MONGODB_PASSWORD_PLACEHOLDER|'${{ secrets.MONGODB_PASSWORD }}'|g' kubernetes/app-and-db.yaml
 
     - name: Deploy to EKS Cloud
