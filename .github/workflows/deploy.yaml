@@ -14,6 +14,8 @@ on:
         options:
           - 'Apply'
           - 'Destroy_EKS'
+  schedule:
+    - cron: '0 21 * * *'
 
 jobs:
   devops-pipeline:
@@ -116,15 +118,18 @@ jobs:
 
     # 🔥 תרחיש מחיקה: ירוץ רק אם בחרת באופן ידני לבצע Destroy_EKS
     - name: Terraform Destroy EKS Cluster Only
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'Destroy_EKS'
+      if: |
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'Destroy_EKS') ||
+        (github.event_name == 'schedule')
       run: |
-        echo "מכבים את ה-EKS והמכונות היקרות. הרשת והאבטחה החינמיים יישארו באוויר לפעם הבאה."
+        echo "שעה 12 בלילה או לחיצה ידנית - מכבים את ה-EKS והמכונות היקרות כדי לחסוך כסף."
         terraform apply -var="enable_eks=false" -auto-approve
       working-directory: ./terraform
 
-    # 🟢 תרחיש הדלקה: ירוץ בריצה ידנית רגילה (Apply)
+    # 🟢 תרחיש הדלקה: ירוץ בכל ריצה רגילה (Push) או בלחיצה ידנית שאינה מחיקה.
+    # 🌟 תיקון קריטי: מבטיח שהקלאסטר יישאר דלוק ומאובטח בשני המצבים!
     - name: Terraform Apply (Ensure Cluster is ON)
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.action != 'Destroy_EKS'
+      if: github.event_name != 'workflow_dispatch' || github.event.inputs.action != 'Destroy_EKS'
       run: terraform apply -var="enable_eks=true" -auto-approve
       working-directory: ./terraform
 
@@ -132,7 +137,6 @@ jobs:
     # חלק ב': בדיקת קיום הקלאסטר בענן
     # ==========================================
     - name: Check if EKS Cluster Exists
-      if: github.event.inputs.action != 'Destroy_EKS'
       id: check_cluster
       run: |
         if aws eks describe-cluster --name namegen-cluster --region us-east-1 >/dev/null 2>&1; then
@@ -147,12 +151,12 @@ jobs:
     # חלק ג': בנייה ופריסה - ירוץ רק אם הקלאסטר קיים באוויר!
     # ==========================================
     - name: Login to Amazon ECR
-      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      if: steps.check_cluster.outputs.cluster_exists == 'true'
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
     - name: Build and Push Docker Image
-      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      if: steps.check_cluster.outputs.cluster_exists == 'true'
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: namegen
@@ -163,13 +167,13 @@ jobs:
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
     - name: Update Kubeconfig for EKS
-      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      if: steps.check_cluster.outputs.cluster_exists == 'true'
       run: |
         aws configure set default.region us-east-1
         aws eks update-kubeconfig --name namegen-cluster --region us-east-1
 
     - name: Update Kubernetes Manifest
-      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      if: steps.check_cluster.outputs.cluster_exists == 'true'
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
@@ -177,7 +181,7 @@ jobs:
         sed -i 's|MONGODB_PASSWORD_PLACEHOLDER|'${{ secrets.MONGODB_PASSWORD }}'|g' kubernetes/app-and-db.yaml
 
     - name: Deploy to EKS Cloud
-      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
+      if: steps.check_cluster.outputs.cluster_exists == 'true'
       run: |
         kubectl apply -f kubernetes/app-and-db.yaml
         
