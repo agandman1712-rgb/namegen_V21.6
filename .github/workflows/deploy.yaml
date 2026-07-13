@@ -1,4 +1,4 @@
-name: EKS Namegen Deploy
+name: Ultimate Smart & Cost-Optimized Pipeline
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'בחר הפעיל את הסביבה או מחוק את הרכיבים היקרים'
+        description: 'בחר להפעיל את הסביבה או למחוק את הרכיבים היקרים'
         required: true
         default: 'Apply'
         type: choice
@@ -27,7 +27,7 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials for Terraform
+    - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -35,7 +35,7 @@ jobs:
         aws-region: us-east-1
 
     # ==========================================
-    # הרצת ידנית 
+    # חלק א': טראפורם חכם - בודק קיום ומדלג על כפילויות!
     # ==========================================
     - name: Setup Terraform
       if: github.event_name == 'workflow_dispatch'
@@ -46,15 +46,56 @@ jobs:
       run: terraform init
       working-directory: ./terraform
 
-    - name: Terraform Apply
+    # 🌟 מנגנון הבדיקה החכם - רץ רק בריצה ידנית כדי להכין את ה-State של טראפורם
+    - name: Smart Check and Import Existing Resources
       if: github.event_name == 'workflow_dispatch'
-      run: terraform apply -auto-approve
+      run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+        
+        echo "בודק האם ECR Repository כבר קים..."
+        if aws ecr describe-repositories --repository-names namegen --region us-east-1 >/dev/null 2>&1; then
+          echo "ה-ECR קיים! מייבא אותו כדי שידלג עליו..."
+          terraform import aws_ecr_repository.namegen_repo namegen || true
+        fi
+
+        echo "בודק האם IAM Role כבר קיים..."
+        if aws iam get-role --role-name namegen-github-actions-role >/dev/null 2>&1; then
+          echo "ה-Role קיים! מייבא אותו כדי שידלג עליו..."
+          terraform import aws_iam_role.github_actions_role namegen-github-actions-role || true
+        fi
+
+        echo "בודק האם IAM Policy כבר קיים..."
+        if aws iam get-policy --policy-arn arn:aws:iam::$ACCOUNT_ID:policy/namegen-github-actions-policy >/dev/null 2>&1; then
+          echo "ה-Policy קיים! מייבא אותו כדי שידלג עליו..."
+          terraform import aws_iam_policy.github_actions_policy arn:aws:iam::$ACCOUNT_ID:policy/namegen-github-actions-policy || true
+        fi
+
+        echo "בודק האם OIDC Provider כבר קיים..."
+        if aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::$ACCOUNT_ID:oidc-provider/://githubusercontent.com >/dev/null 2>&1; then
+          echo "ה-OIDC קיים! מייבא אותו כדי שידלג עליו..."
+          terraform import aws_iam_openid_connect_provider.github arn:aws:iam::$ACCOUNT_ID:oidc-provider/://githubusercontent.com || true
+        fi
+      working-directory: ./terraform
+
+    # 🔥 תרחיש מחיקה: ירוץ רק אם בחרת באופן ידני לבצע Destroy_EKS
+    - name: Terraform Destroy EKS Cluster Only
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'Destroy_EKS'
+      run: |
+        echo "מכבים את ה-EKS והמכונות היקרות. הרשת והאבטחה החינמיים יישארו באוויר לפעם הבאה."
+        terraform apply -var="enable_eks=false" -auto-approve
+      working-directory: ./terraform
+
+    # 🟢 תרחיש הדלקה: ירוץ בריצה ידנית רגילה (Apply)
+    - name: Terraform Apply (Ensure Cluster is ON)
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.action != 'Destroy_EKS'
+      run: terraform apply -var="enable_eks=true" -auto-approve
       working-directory: ./terraform
 
     # ==========================================
-    # בדיקת הקלאסטר בענן - אם קיים
+    # חלק ב': בדיקת קיום הקלאסטר בענן
     # ==========================================
     - name: Check if EKS Cluster Exists
+      if: github.event.inputs.action != 'Destroy_EKS'
       id: check_cluster
       run: |
         if aws eks describe-cluster --name namegen-cluster --region us-east-1 >/dev/null 2>&1; then
@@ -66,32 +107,32 @@ jobs:
         fi
 
     # ==========================================
-    #  בנייה ופריסה - ירוץ רק אם הקלאסטר קיים באוויר
+    # חלק ג': בנייה ופריסה - ירוץ רק אם הקלאסטר קיים באוויר!
     # ==========================================
     - name: Login to Amazon ECR
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
     - name: Build and Push Docker Image
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: namegen 
+        ECR_REPOSITORY: namegen
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker build -t $ECR_REGISTRY/$OFFLINE_REPOSITORY_PLACEHOLDER -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
     - name: Update Kubeconfig for EKS
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
       run: |
         aws configure set default.region us-east-1
         aws eks update-kubeconfig --name namegen-cluster --region us-east-1
 
     - name: Update Kubernetes Manifest
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
@@ -99,7 +140,7 @@ jobs:
         sed -i 's|MONGODB_PASSWORD_PLACEHOLDER|'${{ secrets.MONGODB_PASSWORD }}'|g' kubernetes/app-and-db.yaml
 
     - name: Deploy to EKS Cloud
-      if: steps.check_cluster.outputs.cluster_exists == 'true'
+      if: github.event.inputs.action != 'Destroy_EKS' && steps.check_cluster.outputs.cluster_exists == 'true'
       run: |
         kubectl apply -f kubernetes/app-and-db.yaml
         
