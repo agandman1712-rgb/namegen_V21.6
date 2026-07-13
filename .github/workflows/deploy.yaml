@@ -42,17 +42,8 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
 
-    # - name: Terraform Init
-    # run: terraform init
-    # working-directory: ./terraform
-    
-    - name: Terraform Init & Force Import
-      run: |
-        terraform init -reconfigure
-        
-        echo "=== מריץ ייבוא חד-פעמי של התשתית הקיימת לתוך ה-S3 Backend ==="
-        terraform import -var="enable_eks=true" aws_vpc.namegen_vpc vpc-07027dbf057bddf17 || true
-        terraform import -var="enable_eks=true" aws_eks_cluster.namegen_cluster namegen-cluster || true
+    - name: Terraform Init
+      run: terraform init
       working-directory: ./terraform
       
     - name: Smart Check and Import Existing Resources
