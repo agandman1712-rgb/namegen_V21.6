@@ -83,30 +83,18 @@ resource "aws_route_table" "public_rt" {
     gateway_id = aws_internet_gateway.namegen_igw.id
   }
 
-  tags = {
-    Name = "namegen-public-rt"
-  }
-}
 
 resource "aws_route_table_association" "public_1" 
   count          = length(data.aws_caller_identity.current.account_id) > 0 ? 1 : 0
   subnet_id      = aws_subnet.public_subnet_1.id
   route_table_id = aws_route_table.public_rt.id
 
-  lifecycle {
-    ignore_changes = all
-  }
-}
 
 resource "aws_route_table_association" "public_2" {
   count          = length(data.aws_caller_identity.current.account_id) > 0 ? 1 : 0
   subnet_id      = aws_subnet.public_subnet_2.id
   route_table_id = aws_route_table.public_rt.id
 
-  lifecycle {
-    ignore_changes = all
-  }
-}
 
 # ==========================================
 # 3. הגדרת מאגר האימג'ים (Amazon ECR)
