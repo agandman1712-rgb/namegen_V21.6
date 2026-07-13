@@ -18,6 +18,11 @@ provider "aws" {
 # משתנה פנימי לקבלת ה-Account ID של החשבון הנוכחי
 data "aws_caller_identity" "current" {}
 
+variable "enable_eks" {
+  type    = bool
+  default = true
+}
+
 # ==========================================
 # 2. הגדרות רשת (VPC & Networking)
 # ==========================================
