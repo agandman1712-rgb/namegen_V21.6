@@ -9,6 +9,11 @@ terraform {
       version = "~> 5.70" 
     }
   }
+  backend "s3" {
+    bucket = "namegen-terraform-state-1712"
+    key    = "eks/terraform.tfstate"
+    region = "us-east-1"
+  }
 }
 
 provider "aws" {
